@@ -1,0 +1,5 @@
+spring.application.name=sigvs
+qdrant.url=https://seu-endpoint.qdrant.io
+qdrant.api-key=sua-api-key-aqui
+qdrant.collection=colecao3
+qdrant.vector-size=4
