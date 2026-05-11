@@ -15,6 +15,7 @@ import io.qdrant.client.grpc.Points.SearchPoints;
 import io.qdrant.client.grpc.Points.UpdateResult;
 import io.qdrant.client.grpc.Points.WithPayloadSelector;
 import io.qdrant.client.grpc.Collections.Distance;
+import io.qdrant.client.grpc.Collections.PayloadSchemaType;
 import io.qdrant.client.grpc.Collections.VectorParams;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -28,7 +29,10 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import com.fatec.qdrant1.dto.CollectionRequest;
 
 @RestController
 @RequestMapping("/qdrant")
@@ -39,22 +43,43 @@ public class QdrantController {
 
     // --- GERAÇÃO DE VETORES (ENTREGA 1) ---
 
+    /**
+     * Cria uma nova coleção no Qdrant com base nos dados fornecidos na requisição e
+     * adiciona um índice de payload.
+     * A coleção é configurada com vetores de 4 dimensões e utiliza a métrica de
+     * similaridade de Cosseno.
+     * Após a criação, um índice do tipo Keyword é adicionado ao campo "city" do
+     * payload.
+     *
+     * @param request O objeto contendo o nome da coleção a ser criada.
+     * @return Uma mensagem de confirmação indicando que a coleção e o índice foram
+     *         criados com sucesso.
+     */
     @PostMapping("/generate")
-    public String generate() {
-        String collectionName = "colecao3";
+    public String generate(@RequestBody CollectionRequest request) {
+        String collectionName = request.collectionName();
 
         // 2. Create a collection (4-dimensional vectors using Cosine similarity)
         try {
             qdrantClient.createCollectionAsync(collectionName,
                     VectorParams.newBuilder().setDistance(Distance.Cosine).setSize(4).build())
                     .get();
-            return "Coleção criada com sucesso!";
+
+            // 3. Create a payload index for the "city" field
+
+            return "Coleção '" + collectionName + "' criada e payload index para 'city' adicionado com sucesso!";
+
         } catch (InterruptedException e) {
-            e.printStackTrace();
-            return "Erro ao criar coleção!";
+            Thread.currentThread().interrupt();
+            return "Erro: Operação interrompida!";
         } catch (ExecutionException e) {
-            e.printStackTrace();
-            return "Erro ao criar coleção!";
+            Throwable cause = e.getCause();
+            if (cause instanceof io.grpc.StatusRuntimeException) {
+                return "Erro: " + cause.getMessage();
+            }
+            return "Erro ao criar coleção: " + e.getMessage();
+        } catch (Exception e) {
+            return "Erro inesperado: " + e.getMessage();
         }
     }
 
@@ -68,15 +93,19 @@ public class QdrantController {
                 .putAllPayload(java.util.Map.of("city", value("Berlin")))
                 .build();
 
-        UpdateResult result = null;
+        UpdateResult result;
         try {
             result = qdrantClient.upsertAsync(collectionName, List.of(point)).get();
+            return "Upsert status: " + result.getStatus();
         } catch (InterruptedException e) {
-            e.printStackTrace();
+            Thread.currentThread().interrupt();
+            return "Erro: Operação interrompida!";
         } catch (ExecutionException e) {
-            e.printStackTrace();
+            Throwable cause = e.getCause();
+            return "Erro no Upsert: " + (cause != null ? cause.getMessage() : e.getMessage());
+        } catch (Exception e) {
+            return "Erro inesperado: " + e.getMessage();
         }
-        return "Upsert status: " + result.getStatus();
     }
     // --- BUSCA SEMÂNTICA (ENTREGA 2) ---
 
@@ -104,7 +133,8 @@ public class QdrantController {
             Map<String, Object> result = new java.util.HashMap<>();
             result.put("id", hit.getId().hasUuid() ? hit.getId().getUuid() : hit.getId().getNum());
             result.put("score", hit.getScore());
-            result.put("payload", hit.getPayloadMap().toString()); // Convertendo para String para evitar erro do Jackson com Protobuf Value
+            result.put("payload", hit.getPayloadMap().toString()); // Convertendo para String para evitar erro do
+                                                                   // Jackson com Protobuf Value
             response.add(result);
         }
 
